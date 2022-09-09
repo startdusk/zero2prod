@@ -38,3 +38,42 @@ cargo watch -x check
 cargo watch -x check -x test -x run
 ```
 
+
+### 3.安装 sqlx-cli 工具, [教程](https://zhuanlan.zhihu.com/p/377943210)
+sqlx 自带了一个命令行工具，方便我们进行常规 SQL 的操作，如添加表格、添加索引、增减表的列等。
+
+利用 cargo 安装 sqlx-cli 这个工具:
+```bash
+# supports all databases supported by SQLx
+cargo install sqlx-cli
+
+# only for postgres
+cargo install sqlx-cli --no-default-features --features postgres
+```
+
+使用:
+1.先声明数据库链接地址
+```bash
+export DATABASE_URL=postgres://postgres:password@127.0.0.1:5432/newsletter
+```
+2.创建数据库迁移文件
+```bash
+sqlx migrate add <迁移文件件名>
+```
+然后会在项目根目录下生成一个migrations/<时间戳-迁移文件名>
+然后，在这个文件里面添加你要执行SQL语句
+如:
+```sql
+CREATE TABLE subscriptions(
+	id uuid NOT NULL,
+	PRIMARY KEY (id),
+	email TEXT NOT NULL UNIQUE,
+	name TEXT NOT NULL,
+	subscribed_at timestamptz NOT NULL
+);
+```
+
+3.执行数据库迁移命令
+```bash
+sqlx migrate run
+```
