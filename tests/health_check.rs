@@ -4,13 +4,13 @@
 // You can inspect what code gets generated using
 // `cargo expand --test health_check` (<- name of the test file)
 
-use chrono::Local;
 use std::net::TcpListener;
 
 use reqwest;
-use sqlx::PgPool;
+use sqlx::{Connection, Executor, PgConnection, PgPool};
+use uuid::Uuid;
 
-use zero2prod::configuration::get_configuration;
+use zero2prod::configuration::{get_configuration, DatabaseSettings};
 use zero2prod::startup::run;
 
 #[tokio::test]
@@ -73,11 +73,7 @@ async fn subscribe_returns_a_200_for_valid_form_data() {
     let client = reqwest::Client::new();
 
     // Act
-    let now = Local::now();
-    let body = format!(
-        "name=benjamin&email=benjamin-{}%40gmail.com",
-        now.timestamp()
-    );
+    let body = "name=benjamin&email=benjamin%40gmail.com";
     let response = client
         .post(&format!("{}/subscriptions", &app.address))
         .header("Content-Type", "application/x-www-form-urlencoded")
@@ -108,12 +104,61 @@ async fn spawn_app() -> TestApp {
     // We retrieve the port assigned to us by the OS
     let port = lis.local_addr().unwrap().port();
     let address = format!("http://127.0.0.1:{}", port);
-    let conf = get_configuration().expect("Failed to read configuration.");
-    let db_pool = PgPool::connect(&conf.database.connection_string())
-        .await
-        .expect("Failed to connect to Postgres.");
+    let mut conf = get_configuration().expect("Failed to read configuration.");
+    conf.database.database_name = Uuid::new_v4().to_string();
+    let db_pool = configure_database(&conf.database).await;
 
     let server = run(lis, db_pool.clone()).expect("Failed to bind address");
     let _ = tokio::spawn(server);
     TestApp { address, db_pool }
 }
+
+pub async fn configure_database(conf: &DatabaseSettings) -> PgPool {
+    // Create database
+    let mut conn = PgConnection::connect(&conf.connection_string_without_db())
+        .await
+        .expect("Failed to connect to Postgres");
+
+    conn.execute(
+        format!(
+            r#"
+            CREATE DATABASE "{}";
+        "#,
+            conf.database_name
+        )
+        .as_str(),
+    )
+    .await
+    .expect("Failed to create database");
+
+    // Migrate database
+    let db_pool = PgPool::connect(&conf.connection_string())
+        .await
+        .expect("Failed to connect to Postgres");
+
+    sqlx::migrate!("./migrations")
+        .run(&db_pool)
+        .await
+        .expect("Failed to migrate the database");
+
+    db_pool
+}
+
+// pub async fn drop_database(conf: &DatabaseSettings) {
+//     // Create database
+//     let mut conn = PgConnection::connect(&conf.connection_string_without_db())
+//         .await
+//         .expect("Failed to connect to Postgres");
+
+//     conn.execute(
+//         format!(
+//             r#"
+//             DROP DATABASE "{}";
+//         "#,
+//             conf.database_name
+//         )
+//         .as_str(),
+//     )
+//     .await
+//     .expect("Failed to create database");
+// }
