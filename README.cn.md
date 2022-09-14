@@ -77,3 +77,5 @@ CREATE TABLE subscriptions(
 ```bash
 sqlx migrate run
 ```
+
+### 4.Docker 打包Rust镜像使用rust:x.xx.x-alpine会更小，但交叉编译成linux 需要使用 `rust-musl-builder`

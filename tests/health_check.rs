@@ -5,6 +5,7 @@
 // `cargo expand --test health_check` (<- name of the test file)
 
 use std::net::TcpListener;
+use tokio;
 
 use reqwest;
 use sqlx::{Connection, Executor, PgConnection, PgPool};
@@ -37,7 +38,7 @@ static TRACING: Lazy<()> = Lazy::new(|| {
 #[tokio::test]
 async fn health_check_works() {
     // Arrange
-    let app = spawn_app().await;
+    let mut app = spawn_app().await;
 
     // We need to bring in `reqwest`
     // to perform HTTP requests against our appllication.
@@ -51,13 +52,15 @@ async fn health_check_works() {
         .expect("Failed to execute request.");
     // Assert
     assert!(response.status().is_success());
-    assert_eq!(Some(0), response.content_length())
+    assert_eq!(Some(0), response.content_length());
+
+    app.drop_database().await
 }
 
 #[tokio::test]
 async fn subscribe_returns_a_400_for_when_data_is_missing() {
     // Arrange
-    let app = spawn_app().await;
+    let mut app = spawn_app().await;
     let client = reqwest::Client::new();
 
     let test_cases = vec![
@@ -85,12 +88,14 @@ async fn subscribe_returns_a_400_for_when_data_is_missing() {
             error_message
         );
     }
+
+    app.drop_database().await
 }
 
 #[tokio::test]
 async fn subscribe_returns_a_200_for_valid_form_data() {
     // Arrange
-    let app = spawn_app().await;
+    let mut app = spawn_app().await;
     let client = reqwest::Client::new();
 
     // Act
@@ -110,12 +115,62 @@ async fn subscribe_returns_a_200_for_valid_form_data() {
         .await
         .expect("Failed to fetch saved subscription.");
     assert_eq!(saved.email, "benjamin@gmail.com");
-    assert_eq!(saved.name, "benjamin")
+    assert_eq!(saved.name, "benjamin");
+
+    app.drop_database().await
 }
 
+#[tokio::test]
+async fn subscribe_returns_a_200_when_fields_are_present_but_invalid() {
+    // Arrange 
+    let mut app = spawn_app().await;
+    let client = reqwest::Client::new();
+    let test_cases = vec![
+        ("name=&email=benjamin%40gmail.com", "empty name"),
+        ("name=benjamin&email=", "empty email"),
+        ("name=benjamin&email=definitely-not-an-email", "invalid email"),
+    ];
+
+    for (body, description) in test_cases {
+        // Act
+        let response = client
+            .post(&format!("{}/subscriptions", &app.address))
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .body(body)
+            .send()
+            .await
+            .expect("Failed to execute request.");
+
+        // Assert
+        assert_eq!(400, response.status().as_u16(), "The API did not return a 200 OK when the payload was {}.", description);
+    }
+
+    app.drop_database().await
+}
+
+#[derive(Debug)]
 pub struct TestApp {
     pub address: String,
     pub db_pool: PgPool,
+    pub db_name: String,
+    pub pg_conn: PgConnection,
+}
+
+impl TestApp {
+    pub async fn drop_database(&mut self) {
+        self.db_pool.close().await;
+        self.pg_conn.execute(
+            format!(
+                r#"
+                DROP DATABASE "{}";
+            "#,
+                self.db_name
+            )
+            .as_str(),
+        )
+        .await
+        .expect(&format!("Failed to drop database: {}", self.db_name));
+    }
 }
 
 /// Spin up an instance of our application
@@ -131,16 +186,18 @@ async fn spawn_app() -> TestApp {
     let address = format!("http://127.0.0.1:{}", port);
     let mut conf = get_configuration().expect("Failed to read configuration.");
     conf.database.database_name = Uuid::new_v4().to_string();
-    let db_pool = configure_database(&conf.database).await;
+    let database = conf.database;
+    let (pg_conn, db_pool) = configure_database(&database).await;
 
     let server = run(lis, db_pool.clone()).expect("Failed to bind address");
     let _ = tokio::spawn(server);
-    TestApp { address, db_pool }
+    
+    TestApp { address, db_pool, db_name: database.database_name, pg_conn }
 }
 
-pub async fn configure_database(conf: &DatabaseSettings) -> PgPool {
+pub async fn configure_database(conf: &DatabaseSettings) -> (PgConnection, PgPool) {
     // Create database
-    let mut conn = PgConnection::connect(&conf.connection_string_without_db())
+    let mut conn = PgConnection::connect_with(&conf.without_db())
         .await
         .expect("Failed to connect to Postgres");
 
@@ -157,7 +214,7 @@ pub async fn configure_database(conf: &DatabaseSettings) -> PgPool {
     .expect("Failed to create database");
 
     // Migrate database
-    let db_pool = PgPool::connect(&conf.connection_string())
+    let db_pool = PgPool::connect_with(conf.with_db())
         .await
         .expect("Failed to connect to Postgres");
 
@@ -166,24 +223,5 @@ pub async fn configure_database(conf: &DatabaseSettings) -> PgPool {
         .await
         .expect("Failed to migrate the database");
 
-    db_pool
+    (conn, db_pool)
 }
-
-// pub async fn drop_database(conf: &DatabaseSettings) {
-//     // Create database
-//     let mut conn = PgConnection::connect(&conf.connection_string_without_db())
-//         .await
-//         .expect("Failed to connect to Postgres");
-
-//     conn.execute(
-//         format!(
-//             r#"
-//             DROP DATABASE "{}";
-//         "#,
-//             conf.database_name
-//         )
-//         .as_str(),
-//     )
-//     .await
-//     .expect("Failed to create database");
-// }

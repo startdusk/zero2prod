@@ -1,3 +1,5 @@
+APP_NAME=zero2prod
+
 .PHONY: run
 run:
 	@cargo watch -x check -x test -x run
@@ -6,8 +8,6 @@ run:
 test:
 	@cargo test
 
-SKIP_DOCKER=1
-# skip docker using: make init_db SKIP_DOCKER=0
 .PHONY: init_db
 init_db:
 	@chmod +x ./scripts/init_db.sh
@@ -17,3 +17,11 @@ init_db:
 migrate:
 	@chmod +x ./scripts/migrate.sh
 	@./scripts/migrate.sh
+
+.PHONY: docker_build
+docker_build:
+	@docker build --tag $(APP_NAME) --file Dockerfile .
+
+.PHONY: docker_run
+docker_run:
+	@docker run -p 18000:18000 $(APP_NAME)
