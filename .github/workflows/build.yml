@@ -35,6 +35,12 @@ jobs:
           
     steps:
     - uses: actions/checkout@v3
+    - name: Install
+      run: cargo install sqlx-cli
+    - name: Migrate
+      env:
+        DATABASE_URL: postgres://postgres:password@127.0.0.1:5432/newsletter
+      run: sqlx database create && sqlx migrate run
     - name: Build
       env:
         DATABASE_URL: postgres://postgres:password@127.0.0.1:5432/newsletter
