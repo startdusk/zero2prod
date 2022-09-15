@@ -13,10 +13,39 @@ jobs:
   build:
 
     runs-on: ubuntu-latest
-
+    
+    # Service containers to run with `runner-job`
+    services:
+      # Label used to access the service container
+      postgres:
+        # Docker Hub image
+        image: postgres
+        # Provide the password for postgres
+        env:
+          POSTGRES_PASSWORD: password
+        # Set health checks to wait until postgres has started
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          # Maps tcp port 5432 on service container to the host
+          - 5432:5432
+          
     steps:
     - uses: actions/checkout@v3
+    - name: Install
+      run: cargo install sqlx-cli
+    - name: Migrate
+      env:
+        DATABASE_URL: postgres://postgres:password@127.0.0.1:5432/newsletter
+      run: sqlx database create && sqlx migrate run
     - name: Build
+      env:
+        DATABASE_URL: postgres://postgres:password@127.0.0.1:5432/newsletter
       run: cargo build --verbose
     - name: Run tests
+      env:
+        DATABASE_URL: postgres://postgres:password@127.0.0.1:5432/newsletter
       run: cargo test --verbose
