@@ -123,13 +123,16 @@ async fn subscribe_returns_a_200_for_valid_form_data() {
 
 #[tokio::test]
 async fn subscribe_returns_a_200_when_fields_are_present_but_invalid() {
-    // Arrange 
+    // Arrange
     let mut app = spawn_app().await;
     let client = reqwest::Client::new();
     let test_cases = vec![
         ("name=&email=benjamin%40gmail.com", "empty name"),
         ("name=benjamin&email=", "empty email"),
-        ("name=benjamin&email=definitely-not-an-email", "invalid email"),
+        (
+            "name=benjamin&email=definitely-not-an-email",
+            "invalid email",
+        ),
     ];
 
     for (body, description) in test_cases {
@@ -143,7 +146,12 @@ async fn subscribe_returns_a_200_when_fields_are_present_but_invalid() {
             .expect("Failed to execute request.");
 
         // Assert
-        assert_eq!(400, response.status().as_u16(), "The API did not return a 200 OK when the payload was {}.", description);
+        assert_eq!(
+            400,
+            response.status().as_u16(),
+            "The API did not return a 200 OK when the payload was {}.",
+            description
+        );
     }
 
     app.drop_database().await
@@ -160,17 +168,18 @@ pub struct TestApp {
 impl TestApp {
     pub async fn drop_database(&mut self) {
         self.db_pool.close().await;
-        self.pg_conn.execute(
-            format!(
-                r#"
+        self.pg_conn
+            .execute(
+                format!(
+                    r#"
                 DROP DATABASE "{}";
             "#,
-                self.db_name
+                    self.db_name
+                )
+                .as_str(),
             )
-            .as_str(),
-        )
-        .await
-        .expect(&format!("Failed to drop database: {}", self.db_name));
+            .await
+            .expect(&format!("Failed to drop database: {}", self.db_name));
     }
 }
 
@@ -190,16 +199,27 @@ async fn spawn_app() -> TestApp {
     let database = conf.database;
     let (pg_conn, db_pool) = configure_database(&database).await;
     // Build a new email client
-    let sender_email = conf.email_client.sender().expect("Invalid sender email address.");
+    let sender_email = conf
+        .email_client
+        .sender()
+        .expect("Invalid sender email address.");
+
+    let timeout = conf.email_client.timeout();
     let email_client = EmailClient::new(
         conf.email_client.base_url,
         sender_email,
-        conf.email_client.authorization_token
+        conf.email_client.authorization_token,
+        timeout,
     );
     let server = run(lis, db_pool.clone(), email_client).expect("Failed to bind address");
     let _ = tokio::spawn(server);
-    
-    TestApp { address, db_pool, db_name: database.database_name, pg_conn }
+
+    TestApp {
+        address,
+        db_pool,
+        db_name: database.database_name,
+        pg_conn,
+    }
 }
 
 pub async fn configure_database(conf: &DatabaseSettings) -> (PgConnection, PgPool) {
