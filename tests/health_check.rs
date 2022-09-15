@@ -13,6 +13,7 @@ use uuid::Uuid;
 
 use once_cell::sync::Lazy;
 use zero2prod::configuration::{get_configuration, DatabaseSettings};
+use zero2prod::email_client::EmailClient;
 use zero2prod::startup::run;
 use zero2prod::telemetry;
 
@@ -188,8 +189,14 @@ async fn spawn_app() -> TestApp {
     conf.database.database_name = Uuid::new_v4().to_string();
     let database = conf.database;
     let (pg_conn, db_pool) = configure_database(&database).await;
-
-    let server = run(lis, db_pool.clone()).expect("Failed to bind address");
+    // Build a new email client
+    let sender_email = conf.email_client.sender().expect("Invalid sender email address.");
+    let email_client = EmailClient::new(
+        conf.email_client.base_url,
+        sender_email,
+        conf.email_client.authorization_token
+    );
+    let server = run(lis, db_pool.clone(), email_client).expect("Failed to bind address");
     let _ = tokio::spawn(server);
     
     TestApp { address, db_pool, db_name: database.database_name, pg_conn }

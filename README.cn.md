@@ -31,7 +31,7 @@ rustflags = ["-C", "link-arg=-fuse-ld=/usr/local/bin/zld"]
 # 安装
 cargo install cargo-watch
 
-# 执行命令 重新云心
+# 执行命令 重新运行
 cargo watch -x check
 
 # 或 热更新 先测试 在运行
@@ -52,6 +52,7 @@ cargo install sqlx-cli --no-default-features --features postgres
 ```
 
 使用:
+
 1.先声明数据库链接地址
 ```bash
 export DATABASE_URL=postgres://postgres:password@127.0.0.1:5432/newsletter
@@ -78,4 +79,4 @@ CREATE TABLE subscriptions(
 sqlx migrate run
 ```
 
-### 4.Docker 打包Rust镜像使用rust:x.xx.x-alpine会更小，但交叉编译成linux 需要使用 `rust-musl-builder`
+### 4.Docker 打包Rust镜像使用rust:x.xx.x-alpine会更小，但交叉编译成linux 需要使用 [`rust-musl-builder`](https://github.com/emk/rust-musl-builder)
