@@ -14,29 +14,32 @@ jobs:
 
     runs-on: ubuntu-latest
     
+    # Service containers to run with `runner-job`
     services:
+      # Label used to access the service container
       postgres:
-        image: postgres:14
+        # Docker Hub image
+        image: postgres
+        # Provide the password for postgres
         env:
-          POSTGRES_USER: postgres
           POSTGRES_PASSWORD: password
-          POSTGRES_DB: newsletter
+        # Set health checks to wait until postgres has started
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
         ports:
+          # Maps tcp port 5432 on service container to the host
           - 5432:5432
-        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
-
+          
     steps:
-    - name: Setup database
-      env:
-        POSTGRES_HOST: postgres
-        POSTGRES_USER: postgres
-        POSTGRES_PASSWORD: password
-        POSTGRES_DB: newsletter
-        POSTGRES_PORT: ${{ job.services.postgres.ports[5432] }}
-        DATABASE_URL: postgres://postgres:password@127.0.0.1:5432/newsletter
-        
     - uses: actions/checkout@v3
     - name: Build
+      env:
+        DATABASE_URL: postgres://postgres:password@127.0.0.1:5432/newsletter
       run: cargo build --verbose
     - name: Run tests
+      env:
+        DATABASE_URL: postgres://postgres:password@127.0.0.1:5432/newsletter
       run: cargo test --verbose
