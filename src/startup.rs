@@ -1,15 +1,15 @@
 use std::net::TcpListener;
 
-use actix_web::{HttpServer, App, web};
 use actix_web::dev::Server;
 use actix_web::web::Data;
-use sqlx::PgPool;
+use actix_web::{web, App, HttpServer};
 use sqlx::postgres::PgPoolOptions;
+use sqlx::PgPool;
 use tracing_actix_web::TracingLogger;
 
-use crate::configuration::{Settings, DatabaseSettings};
+use crate::configuration::{DatabaseSettings, Settings};
 use crate::email_client::EmailClient;
-use crate::routes::{health_check, subscribe};
+use crate::routes::{confirm, health_check, publish_newsletter, subscribe};
 
 pub struct Application {
     port: u16,
@@ -24,9 +24,9 @@ impl Application {
         let addr = format!("{}:{}", conf.application.host, conf.application.port);
         let lis = TcpListener::bind(addr)?;
         let port = lis.local_addr().unwrap().port();
-        let server = run(lis, conn_pool, email_client)?;
-        
-        Ok(Self{ port, server })
+        let server = run(lis, conn_pool, email_client, conf.application.base_url)?;
+
+        Ok(Self { port, server })
     }
 
     pub fn port(&self) -> u16 {
@@ -38,14 +38,29 @@ impl Application {
     }
 }
 
+// We need to define a wrapper type in order to retrieve the URL
+// in the `subscribe` handler.
+// Retrieval from the context, in actix-web, is type-based: using
+// a raw `String` would expose us to conflicts.
+#[derive(Debug)]
+pub struct ApplicationBaseUrl(pub String);
+
 pub fn get_connection_pool(conf: &DatabaseSettings) -> PgPool {
-    PgPoolOptions::new().acquire_timeout(std::time::Duration::from_secs(2)).connect_lazy_with(conf.with_db())
+    PgPoolOptions::new()
+        .acquire_timeout(std::time::Duration::from_secs(2))
+        .connect_lazy_with(conf.with_db())
 }
 
-pub fn run(lis: TcpListener, conn_pool: PgPool, email_client: EmailClient) -> Result<Server, std::io::Error> {
+pub fn run(
+    lis: TcpListener,
+    conn_pool: PgPool,
+    email_client: EmailClient,
+    base_url: String,
+) -> Result<Server, std::io::Error> {
     // Wrap the pool using web::Data, which boils down to an Arc smart pointer
     let conn_pool = Data::new(conn_pool);
     let email_client = Data::new(email_client);
+    let base_url = Data::new(ApplicationBaseUrl(base_url));
     let srv = HttpServer::new(move || {
         App::new()
             // Middleware are added using the `wrap` method on `App`
@@ -54,12 +69,14 @@ pub fn run(lis: TcpListener, conn_pool: PgPool, email_client: EmailClient) -> Re
             // A new entry in our routing table for POST /subscriptions requests
             .route("/subscriptions", web::post().to(subscribe))
             // Register the connection as part of the application state
+            .route("/subscriptions/confirm", web::get().to(confirm))
+            .route("/newsletters", web::post().to(publish_newsletter))
             .app_data(conn_pool.clone())
             .app_data(email_client.clone())
+            .app_data(base_url.clone())
     })
     .listen(lis)?
     .run();
 
     Ok(srv)
 }
-

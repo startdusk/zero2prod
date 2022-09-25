@@ -25,3 +25,7 @@ docker_build:
 .PHONY: docker_run
 docker_run:
 	@docker run -p 18000:18000 $(APP_NAME)
+
+.PHONY: cleanup
+cleanup:
+	@cargo check && cargo clippy && cargo test

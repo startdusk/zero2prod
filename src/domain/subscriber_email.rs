@@ -26,7 +26,6 @@ impl std::fmt::Display for SubscriberEmail {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
 	use super::SubscriberEmail;

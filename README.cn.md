@@ -1,3 +1,6 @@
+[项目参考原地址](https://github.dev/LukeMathWalker/zero-to-production)
+---
+
 ### 1.rust编译默认的编译器编译很慢是慢在链接期，使用其他链接器提升编译速度(看情况使用，如果本来编译就不慢的话就不需要使用了)
 ```bash
 # 在项目根目录下 新建 .cargo/config.toml
