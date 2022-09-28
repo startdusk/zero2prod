@@ -198,7 +198,7 @@ pub async fn configure_database(
     // Create database
     conf.host = container.host.clone();
     conf.port = container.port;
-    for i in 0..10 {
+    for i in 1..=10 {
         match PgConnection::connect_with(&conf.without_db()).await {
             Ok(conn) => {
                 conn.close().await?;

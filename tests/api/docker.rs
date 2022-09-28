@@ -34,7 +34,7 @@ pub fn start_container(
     let ns = extract_ip_and_port(id.clone(), port)?;
     let host = format!("{}:{}", ns.host_ip, ns.host_port);
 
-    for i in 0..10 {
+    for i in 1..=10 {
         let output = Command::new("docker")
             .arg("inspect")
             .arg("-f")
@@ -137,6 +137,7 @@ fn start_and_stop_container() {
     let port = "80".to_string();
     let args: Vec<String> = vec![];
     let container = start_container(image, port, args).unwrap();
+    dbg!(&container.id);
     stop_container(container.id).unwrap();
 }
 
