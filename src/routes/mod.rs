@@ -1,7 +1,10 @@
 mod health_check;
+mod home;
 mod newsletters;
 mod subscriptions;
 mod subscriptions_confirm;
+
+pub use home::*;
 
 use actix_web::{
     http::{header, StatusCode},
