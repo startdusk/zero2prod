@@ -44,6 +44,8 @@ thiserror = "1"
 anyhow = "1"
 base64 = "0"
 argon2 = { version = "0.3", features = ["std"] }
+urlencoding = "2"
+htmlescape = "0"
 
 
 [dev-dependencies]
