@@ -3,6 +3,7 @@ use std::net::TcpListener;
 use actix_web::dev::Server;
 use actix_web::web::Data;
 use actix_web::{web, App, HttpServer};
+use secrecy::Secret;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
 use tracing_actix_web::TracingLogger;
@@ -26,7 +27,13 @@ impl Application {
         let addr = format!("{}:{}", conf.application.host, conf.application.port);
         let lis = TcpListener::bind(addr)?;
         let port = lis.local_addr().unwrap().port();
-        let server = run(lis, conn_pool, email_client, conf.application.base_url)?;
+        let server = run(
+            lis,
+            conn_pool,
+            email_client,
+            conf.application.base_url,
+            conf.application.hmac_secret,
+        )?;
 
         Ok(Self { port, server })
     }
@@ -53,16 +60,21 @@ pub fn get_connection_pool(conf: &DatabaseSettings) -> PgPool {
         .connect_lazy_with(conf.with_db())
 }
 
+#[derive(Debug, Clone)]
+pub struct HmacSecret(pub Secret<String>);
+
 pub fn run(
     lis: TcpListener,
     conn_pool: PgPool,
     email_client: EmailClient,
     base_url: String,
+    hmac_secret: Secret<String>,
 ) -> Result<Server, std::io::Error> {
     // Wrap the pool using web::Data, which boils down to an Arc smart pointer
     let conn_pool = Data::new(conn_pool);
     let email_client = Data::new(email_client);
     let base_url = Data::new(ApplicationBaseUrl(base_url));
+    let hmac_secret = Data::new(HmacSecret(hmac_secret));
     let srv = HttpServer::new(move || {
         App::new()
             // Middleware are added using the `wrap` method on `App`
@@ -79,6 +91,7 @@ pub fn run(
             .app_data(conn_pool.clone())
             .app_data(email_client.clone())
             .app_data(base_url.clone())
+            .app_data(hmac_secret.clone())
     })
     .listen(lis)?
     .run();
