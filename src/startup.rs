@@ -1,5 +1,7 @@
 use std::net::TcpListener;
 
+use actix_session::storage::RedisSessionStore;
+use actix_session::SessionMiddleware;
 use actix_web::cookie::Key;
 use actix_web::dev::Server;
 use actix_web::web::Data;
@@ -23,7 +25,7 @@ pub struct Application {
 }
 
 impl Application {
-    pub async fn build(conf: Settings) -> Result<Self, std::io::Error> {
+    pub async fn build(conf: Settings) -> Result<Self, anyhow::Error> {
         let conn_pool = get_connection_pool(&conf.database);
         let email_client = conf.email_client.client();
 
@@ -36,7 +38,9 @@ impl Application {
             email_client,
             conf.application.base_url,
             conf.application.hmac_secret,
-        )?;
+            conf.redis_uri,
+        )
+        .await?;
 
         Ok(Self { port, server })
     }
@@ -66,26 +70,31 @@ pub fn get_connection_pool(conf: &DatabaseSettings) -> PgPool {
 #[derive(Debug, Clone)]
 pub struct HmacSecret(pub Secret<String>);
 
-pub fn run(
+pub async fn run(
     lis: TcpListener,
     conn_pool: PgPool,
     email_client: EmailClient,
     base_url: String,
     hmac_secret: Secret<String>,
-) -> Result<Server, std::io::Error> {
+    redis_uri: Secret<String>,
+) -> Result<Server, anyhow::Error> {
     // Wrap the pool using web::Data, which boils down to an Arc smart pointer
     let conn_pool = Data::new(conn_pool);
     let email_client = Data::new(email_client);
     let base_url = Data::new(ApplicationBaseUrl(base_url));
-    let message_store =
-        CookieMessageStore::builder(Key::from(hmac_secret.expose_secret().as_bytes())).build();
+    let secret_key = Key::from(hmac_secret.expose_secret().as_bytes());
+    let message_store = CookieMessageStore::builder(secret_key.clone()).build();
     let message_framework = FlashMessagesFramework::builder(message_store).build();
     let hmac_secret = Data::new(HmacSecret(hmac_secret));
-
+    let redis_store = RedisSessionStore::new(redis_uri.expose_secret()).await?;
     let srv = HttpServer::new(move || {
         App::new()
             // Middleware are added using the `wrap` method on `App`
             .wrap(message_framework.clone())
+            .wrap(SessionMiddleware::new(
+                redis_store.clone(),
+                secret_key.clone(),
+            ))
             .wrap(TracingLogger::default())
             .route("/", web::get().to(home))
             .route("/login", web::get().to(login_form))
