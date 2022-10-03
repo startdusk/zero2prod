@@ -118,6 +118,17 @@ impl TestApp {
             .await
             .unwrap()
     }
+
+    pub async fn get_admin_dashborad(&self) -> String {
+        self.api_client
+            .get(&format!("{}/admin/dashboard", &self.address))
+            .send()
+            .await
+            .expect("Failed to execute request.")
+            .text()
+            .await
+            .unwrap()
+    }
 }
 
 impl Drop for TestApp {
