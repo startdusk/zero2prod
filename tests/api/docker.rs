@@ -1,7 +1,6 @@
 use std::process::Command;
 use std::{thread, time};
 
-use anyhow::Ok;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
