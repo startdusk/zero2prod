@@ -1,5 +1,5 @@
 use actix_web::{cookie::Cookie, http::header::ContentType, HttpResponse};
-use actix_web_flash_messages::{IncomingFlashMessages, Level};
+use actix_web_flash_messages::IncomingFlashMessages;
 use std::fmt::Write;
 
 // #[derive(Debug, serde::Deserialize)]
@@ -23,7 +23,8 @@ use std::fmt::Write;
 
 pub async fn login_form(flash_message: IncomingFlashMessages) -> HttpResponse {
     let mut error_html = String::new();
-    for m in flash_message.iter().filter(|m| m.level() == Level::Error) {
+    // Display all message levels, not just errors!
+    for m in flash_message.iter() {
         writeln!(error_html, "<p><i>{}</i></p>", m.content()).unwrap();
     }
 
