@@ -1,7 +1,8 @@
-use actix_web::{web, HttpResponse};
+use actix_web::{error::InternalError, web, HttpResponse};
 use actix_web_flash_messages::FlashMessage;
 use secrecy::{ExposeSecret, Secret};
 use sqlx::PgPool;
+use uuid::Uuid;
 
 use crate::{
     authentication::{validate_credentials, AuthError, Credentials},
@@ -23,8 +24,8 @@ pub async fn change_password(
     pool: web::Data<PgPool>,
 ) -> Result<HttpResponse, actix_web::Error> {
     // passwords should be longer than 12 characters but shorter than 128 characters.
-    if form.new_password.expose_secret().len() < 12 || form.new_password.expose_secret().len() > 128
-    {
+    let password_len = form.new_password.expose_secret().len();
+    if password_len < 12 || password_len > 128 {
         FlashMessage::error(
             "new passwords should be longer than 12 characters but shorter than 128 characters.",
         )
@@ -42,12 +43,7 @@ pub async fn change_password(
         return Ok(change_password_page());
     }
 
-    let user_id = session.get_user_id().map_err(e500)?;
-    if user_id.is_none() {
-        return Ok(login_page());
-    };
-    let user_id = user_id.unwrap();
-
+    let user_id = reject_anonymous_users(session).await?;
     let username = get_username(user_id, &pool).await.map_err(e500)?;
     let credentials = Credentials {
         username,
@@ -69,4 +65,15 @@ pub async fn change_password(
         .map_err(e500)?;
     FlashMessage::error("Your password has been changed.").send();
     Ok(change_password_page())
+}
+
+async fn reject_anonymous_users(session: TypedSession) -> Result<Uuid, actix_web::Error> {
+    match session.get_user_id().map_err(e500)? {
+        Some(user_id) => Ok(user_id),
+        None => {
+            let resp = login_page();
+            let e = anyhow::anyhow!("The user has not logged in");
+            Err(InternalError::from_response(e, resp).into())
+        }
+    }
 }
