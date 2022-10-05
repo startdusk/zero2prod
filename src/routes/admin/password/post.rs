@@ -5,7 +5,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::{
-    authentication::{validate_credentials, AuthError, Credentials},
+    authentication::{validate_credentials, AuthError, Credentials, UserId},
     routes::get_username,
     session_state::TypedSession,
     utils::{change_password_page, e500, login_page},
@@ -20,8 +20,8 @@ pub struct FormData {
 
 pub async fn change_password(
     form: web::Form<FormData>,
-    session: TypedSession,
     pool: web::Data<PgPool>,
+    user_id: web::ReqData<UserId>,
 ) -> Result<HttpResponse, actix_web::Error> {
     // passwords should be longer than 12 characters but shorter than 128 characters.
     let password_len = form.new_password.expose_secret().len();
@@ -42,9 +42,8 @@ pub async fn change_password(
         .send();
         return Ok(change_password_page());
     }
-
-    let user_id = reject_anonymous_users(session).await?;
-    let username = get_username(user_id, &pool).await.map_err(e500)?;
+    let user_id = user_id.into_inner();
+    let username = get_username(*user_id, &pool).await.map_err(e500)?;
     let credentials = Credentials {
         username,
         password: form.0.current_password,
@@ -60,20 +59,9 @@ pub async fn change_password(
         };
     }
 
-    crate::authentication::change_password(user_id, form.0.new_password, &pool)
+    crate::authentication::change_password(*user_id, form.0.new_password, &pool)
         .await
         .map_err(e500)?;
     FlashMessage::error("Your password has been changed.").send();
     Ok(change_password_page())
-}
-
-async fn reject_anonymous_users(session: TypedSession) -> Result<Uuid, actix_web::Error> {
-    match session.get_user_id().map_err(e500)? {
-        Some(user_id) => Ok(user_id),
-        None => {
-            let resp = login_page();
-            let e = anyhow::anyhow!("The user has not logged in");
-            Err(InternalError::from_response(e, resp).into())
-        }
-    }
 }
