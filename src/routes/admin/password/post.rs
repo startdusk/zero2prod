@@ -22,11 +22,15 @@ pub async fn change_password(
     session: TypedSession,
     pool: web::Data<PgPool>,
 ) -> Result<HttpResponse, actix_web::Error> {
-    let user_id = session.get_user_id().map_err(e500)?;
-    if user_id.is_none() {
-        return Ok(login_page());
-    };
-    let user_id = user_id.unwrap();
+    // passwords should be longer than 12 characters but shorter than 128 characters.
+    if form.new_password.expose_secret().len() < 12 || form.new_password.expose_secret().len() > 128
+    {
+        FlashMessage::error(
+            "new passwords should be longer than 12 characters but shorter than 128 characters.",
+        )
+        .send();
+        return Ok(change_password_page());
+    }
 
     // `Secret<String>` does not implement `Eq`,
     // therefore we need to compare the underlying `String`.
@@ -37,6 +41,12 @@ pub async fn change_password(
         .send();
         return Ok(change_password_page());
     }
+
+    let user_id = session.get_user_id().map_err(e500)?;
+    if user_id.is_none() {
+        return Ok(login_page());
+    };
+    let user_id = user_id.unwrap();
 
     let username = get_username(user_id, &pool).await.map_err(e500)?;
     let credentials = Credentials {
